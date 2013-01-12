@@ -1,0 +1,273 @@
+Design Considerations:
+The schema  design decisions are made to accommodate high scalability needs of twitter data that’s in (usually in the range GB’s or TB’s). For the purposes of analytics, the database operations are mostly read-only. The data is a live one. Also, for frequent reads and in general, large scale needs, the tables aren’t normalized and the redundant data can be easily spread across different tables.
+
+Caching is implemented on the server side, for frequently accessed read operations. I’ve used Object Oriented approach using Java in my API design.
+
+Design Notes:
+The source of twitter data, can be :
+a) Twitter dataset file in ZIP/XLS format (GB’s or TB’s of data provided by Twitter)
+b) Twitter data stored in database tables on the public cloud.
+c) Twitter data stored in our database tables (assuming we’re providing Twitter Type Infrastructure and Data Analytics).
+d) Twitter response in XML format.
+
+In case of (a), the dataset file can be read and mapped to our Java Object Model by parsing the files, tokenizing and using cache service for retrieval of the XLS data. In case of both (b) &(c), we can map our Object Model using an ORM framework to the data model. Implementation choices include Spring, Hibernate, JPA etc.
+
+In case of (d), marshalling and unmarshalling of XML (using JAXB), is done to extract meta data.
+
+I’m dealing with case (c) in my approach for the design of the persistence model. It’s assumed that the content of data, the capture of user actions(clicks) and user tweet profile attributes can be easily passed (using web 2.0 technologies like Jquery, HTML5, Ext-Js, DWR etc, to Java API which then talks to persistence layer to persist data in tables).
+
+Domain Model:
+Below is the domain model to represent business entities or real-world objects.
+(see domain_model.jpg)
+
+Object Model:
+The object model for the domain model above is represented below using Class Diagrams.
+Class Diagrams (without arrrow marks showcasing OO relationship though –  explained later)
+
+Class <User>
+-userId: String
+-name: String
+-gender: char
+-age: int
+-location: String
+-tweets: List
+-followers: List
+-following: List
+-lists: Set+addFollower(User user): boolean
++getFollowers(): List
++addFollowing(User user): boolean
++getFollowing(): List
++addToList(String listName): boolean
++getLists(): Set
++tweet(String content): boolean
++tweets(): List<Tweet>
+
++retweet(String content): boolean
++favorite(String content): boolean
++reply(String content): boolean
++delete(String content): boolean
++expand(String content): boolean
++viewConversation(String convn): void
+
++getUserId(): String
++setUserId(String userId): void
++getName(): String
++setName(String userId): void
++getGender(): char
++setGender(char gender): void
++getAge(): int
++setAge(int age): void
++getLocation(): String
++setLocation(String location): void
+
+Class <Tweet>
+-tweetId: String
+-maxLength: int
+-contentType: ContentType
+-content: String
+-tags: List
+-postedBy: String
+-favoriteFreq: int
+-replyFreq: int
+-expandFreq: int
+-createDateTime: TimeStamp
++setRetweetFreq(): void
++getRetweetFreq(): int+setPostedBy(String userId): void
++getPostedBy(): String
++setContentType(ContentType ContentType): void
++getContentType(): ContentType
+
++setFavoriteFreq(): void
++getFavoriteFreq(): int
++setReplyFreq(): void
++getReplyFreq(): int
++setExpandFreq(): void
++getExpandFreq(): int
+
++setViewConversationFreq(): void
++getViewConversationFreq(): int
+
++addTag(Tag tag): boolean
++getTags(): List
+
+Class <UserTweetCache>
+-cacheInstance: UserTweetCache
+-userTweetMap: Map<string, set<tweet=”">>
++lookUpTweet(String userId, String twtStr): Tweet
++getUserTweetMap(): Map<string, set<tweet=”">>
++getCacheInstance(): UserTweetCache
+ 
+
+Class <ContentType>
+-TweetContentType: enum{ TEXT, VIDEO, IMAGE, URL, COMPOSITE}
++getValue(TweetContentType): String
+ 
+
+Class <Tag>
+-id: String
+-name: String
+-source: String+setTagId(String tagid): void
++getTagId(): String
++setSource(String source): void
++getSource(): String
++setName(String source): void
++getName(): String
+ 
+
+Class <UserListHelper>
+-name: String
++addUserToList(String userId, String listName): boolean
++lists: Set<String>
+ 
+
+Class <UserList>
+-name: String
+-userListMap: Map<string, set<user=”">>
+-addUser(String userId): User
++setName(String listName): void
++getName(): String
+ 
+
+interface <MetaData>
++extractMetaData(Set tweets): TweetAnalysisMetaData
++MetaDataType: enum {USERACTION, CONTENT,USER_ATTRIBUTE }
+ 
+
+UserAttributeBasedMetaData
++extractMetaData(Set<User> users): String
+ 
+
+ContentBasedMetaData
++extractMetaData(Set<Tweet> tweets): String
+ 
+
+UserActionBasedMetaData
++extractMetaData(Set<Tweet> tweets): String
+ 
+
+class <TextAnalyzer>
++computeTermFreq: void
++applyIDF(): void
++tokenize(String tweetContent): List
+..
+ 
+
+class TweetContentMagnitudeVectorImpl
++normalize(TweetContentMagnitudeVector vec): void
+..
+ 
+
+class TweetContentMagnitudeVector
++getTFIDFValue(): double
+..
+ 
+
+class TextClusterer
++clusterTweets(Set<Tweet>): void
++applyKMeansSetting(KMeansSetting kmeanSetting): void
++computeSimilarityMatrix(): String[][]
++printClusteStatistics(): void
+ 
+
+class UserTweetPersistenceManager
++persistUser(User user): boolean
++persistTweet(Tweet user): boolean
++persistTag(Tag tag): boolean
+-retrieveUser(String tweetId): boolean
+-retrieveTweet(String userId): boolean
+ 
+
+class TweetQueryResult
++getQueryCount(): int
++getRelevantTweets(): Set
+ 
+
+class TweetQueryParameter
++QueryParameter.Parameter: enum {KEY, APIUSER, START, INDEX, LIMIT, SORTBY}
++QueryType.Typer: enum {UPDATE, SELECT, DELETE}+setParameter(QueryParameter queryParam): void
++getParameter(QueryParameter queryParam): void
++setType(QueryType queryType): void
++getType(): QueryType
+ 
+
+class TweetAnalysisMetaData
++displayMetaDataProfile(MetadataType): void+displayUserAttributeBasedMetaDataProfile(MetadataType.USER_ATTRIBUTE): void
++displayContentBasedMetaDataProfile(MetadataType.CONTENT):void
++displayUserActionBasedMetaDataProfile(MetadataType.USER_ACTION): void
+ 
+
+Implementation Notes:
+To avoid frequent calls to DB, Cache (UserTweetCache) is implemented to retrieve tweets and users from a Map which is updated for every new tweet or user and whose reference is got through UserTweetCache singleton instance. If using Map could be a concern for Memory Leaks, size can be specified for Map. Also, LinkedList can be a viable option with LRU type of Cache implementation (discard the LRU LinkedList objects from the cache).
+
+To ensure data integrity for much of the data (we’re not really concerned if some of the unimportant data from the perspective of Cache, gets updated, which is not reflected in Cache), only after the records are successfully deleted or updated in DB, is the UserTweetCache Tweet / User object  updated accordingly.
+
+ 
+
+Persistence Model:
+Schema Design:
+1. User
+
+userid            varchar2(50)
+gender           varchar2(2)
+age                int(3)
+location         varchar2(30)
+2. Tweet
+
+tweetid           varchar2(50)
+content           varchar2(2)
+createdatetime TimeStamp(19)
+favFreq           int
+replFreq          int
+retweetFreq    int
+expandFreq     int
+viewConvFreq int
+3. Tag
+
+tagid           varchar2(20)
+tagtext        varchar2(50)
+4. UserAction
+
+actionId           int(2)
+description       varchar2(20)
+details             varchar2(40)
+5. User_Tweet_Tag
+
+userId                 varchar2(20)
+tweetId               varchar2(20)
+tagId                   varchar2(40)
+createDate         TimeStamp(19)
+6. User_Tweet_UserAction
+
+userId                 varchar2(20)
+tweetId               varchar2(20)
+actionId               int
+7.Tweet_Tag
+
+sourceid             varchar2(20)
+tweetId               varchar2(20)
+tagId                   varchar2(20)
+weight                 double(22)
+createDate        TimeStamp(19)
+ 
+
+Saving Data:
+To persist data from the update based on user action (tweet, retweet, reply, view, expand, favorite etc), UserTweetPersistenceManager encapsulates TweetQueryParameter, QueryType and TweetQueryResult objects that interact with ORM API’s to persist data in DB.
+
+If update is successful, the UserTweetCache is updated with the modified Tweet object.
+If update is a failure, the UserTweetCache is not updated with the modified Tweet object.
+All the error conditions are handled to ensure data integrity of the Cache.
+
+ 
+
+Retrieving Data:
+Set and Set are populated with corresponding ResultSet objects retrieved using UserTweetPersistenceManager – retrieveUsers(tweetId), retrieveTweets(userId) etc.
+
+To retrieve user-attribute based metadata, the Set<User> is passed to the MetaData extractor infrastructure.
+To retrieve content-based metadata, Set<Tweet> is passed to the MetaData extractor infrastructure.
+
+To retrieve user action based metadata, Set<Tweet> is passed to the MetaData extractor infrastructure.
+
+The Tweet data for a user, or the User data for a tweet can be fetched by doing a join operation amongst User_Tweet_Tag, User, Tweet, User_Tweet_UserAction tables.
+
+TweetAnalysisMetaData displays the metadata profile or statistics based on the type of MetaData (MetaDataType.USERACTION, MetaDataType.CONTENT, MetaDataType.USERATTRIBUTE or aggregating all of them).
+
